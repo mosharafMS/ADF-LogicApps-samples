@@ -1,0 +1,465 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "For_each": {
+                "actions": {
+                    "Condition": {
+                        "actions": {
+                            "Deallocate_Cluster": {
+                                "inputs": {
+                                    "body": {
+                                        "cluster_id": "@items('For_each')?['cluster_id']"
+                                    },
+                                    "headers": {
+                                        "Authorization": "Bearer @{body('Parse_Azure_AD_Access_Token')?['access_token']}",
+                                        "X-Databricks-Azure-SP-Management-Token": "@body('Parse_Management_Endpoint_Token')?['access_token']",
+                                        "X-Databricks-Azure-Workspace-Resource-Id": "/subscriptions/@{triggerBody()?['subscription']}/resourceGroups/@{triggerBody()?['resourceGroup']}/providers/Microsoft.Databricks/workspaces/@{triggerBody()?['workspaceName']}"
+                                    },
+                                    "method": "POST",
+                                    "uri": "@{concat('https://',triggerBody()?['databricksInstance'],'.azuredatabricks.net/api/2.0/clusters/delete')}"
+                                },
+                                "runAfter": {},
+                                "type": "Http"
+                            }
+                        },
+                        "expression": {
+                            "and": [
+                                {
+                                    "equals": [
+                                        "@items('For_each')?['state']",
+                                        "RUNNING"
+                                    ]
+                                }
+                            ]
+                        },
+                        "runAfter": {},
+                        "type": "If"
+                    }
+                },
+                "foreach": "@body('Select')",
+                "runAfter": {
+                    "Select": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            },
+            "Get_Azure_AD_Access_Token": {
+                "inputs": {
+                    "body": "grant_type=client_credentials\n&client_id=@{triggerBody()?['client_id']}\n&resource=2ff814a6-3304-4ab8-85cb-cd0e6f879c1d\n&client_secret=@{triggerBody()?['client_secret']}",
+                    "headers": {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    "method": "POST",
+                    "uri": "@{concat('https://login.microsoftonline.com/',triggerBody()?['tenantID'],'/oauth2/token')}"
+                },
+                "runAfter": {},
+                "type": "Http"
+            },
+            "Get_Management_endpoint_token": {
+                "inputs": {
+                    "body": "grant_type=client_credentials\n&client_id=@{triggerBody()?['client_id']}\n&resource=https://management.core.windows.net/\n&client_secret=@{triggerBody()?['client_secret']}",
+                    "headers": {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    "method": "POST",
+                    "uri": "@{concat('https://login.microsoftonline.com/',triggerBody()?['tenantID'],'/oauth2/token')}"
+                },
+                "runAfter": {
+                    "Parse_Azure_AD_Access_Token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "List_Clusters": {
+                "inputs": {
+                    "headers": {
+                        "Authorization": "Bearer @{body('Parse_Azure_AD_Access_Token')?['access_token']}",
+                        "X-Databricks-Azure-SP-Management-Token": "@body('Parse_Management_Endpoint_Token')?['access_token']",
+                        "X-Databricks-Azure-Workspace-Resource-Id": "/subscriptions/@{triggerBody()?['subscription']}/resourceGroups/@{triggerBody()?['resourceGroup']}/providers/Microsoft.Databricks/workspaces/@{triggerBody()?['workspaceName']}"
+                    },
+                    "method": "GET",
+                    "uri": "@{concat('https://',triggerBody()?['databricksInstance'],'.azuredatabricks.net/api/2.0/clusters/list')}"
+                },
+                "runAfter": {
+                    "Parse_Management_Endpoint_Token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "Parse_Azure_AD_Access_Token": {
+                "inputs": {
+                    "content": "@body('Get_Azure_AD_Access_Token')",
+                    "schema": {
+                        "properties": {
+                            "access_token": {
+                                "type": "string"
+                            },
+                            "expires_in": {
+                                "type": "string"
+                            },
+                            "expires_on": {
+                                "type": "string"
+                            },
+                            "ext_expires_in": {
+                                "type": "string"
+                            },
+                            "not_before": {
+                                "type": "string"
+                            },
+                            "resource": {
+                                "type": "string"
+                            },
+                            "token_type": {
+                                "type": "string"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "runAfter": {
+                    "Get_Azure_AD_Access_Token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson"
+            },
+            "Parse_Clusters": {
+                "inputs": {
+                    "content": "@body('List_Clusters')",
+                    "schema": {
+                        "properties": {
+                            "clusters": {
+                                "items": {
+                                    "properties": {
+                                        "autoscale": {
+                                            "properties": {
+                                                "max_workers": {
+                                                    "type": "integer"
+                                                },
+                                                "min_workers": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "autotermination_minutes": {
+                                            "type": "integer"
+                                        },
+                                        "azure_attributes": {
+                                            "properties": {
+                                                "availability": {
+                                                    "type": "string"
+                                                },
+                                                "first_on_demand": {
+                                                    "type": "integer"
+                                                },
+                                                "spot_bid_max_price": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "cluster_cores": {
+                                            "type": "integer"
+                                        },
+                                        "cluster_id": {
+                                            "type": "string"
+                                        },
+                                        "cluster_memory_mb": {
+                                            "type": "integer"
+                                        },
+                                        "cluster_name": {
+                                            "type": "string"
+                                        },
+                                        "cluster_source": {
+                                            "type": "string"
+                                        },
+                                        "creator_user_name": {
+                                            "type": "string"
+                                        },
+                                        "default_tags": {
+                                            "properties": {
+                                                "ClusterId": {
+                                                    "type": "string"
+                                                },
+                                                "ClusterName": {
+                                                    "type": "string"
+                                                },
+                                                "Creator": {
+                                                    "type": "string"
+                                                },
+                                                "Vendor": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "driver": {
+                                            "properties": {
+                                                "host_private_ip": {
+                                                    "type": "string"
+                                                },
+                                                "instance_id": {
+                                                    "type": "string"
+                                                },
+                                                "node_id": {
+                                                    "type": "string"
+                                                },
+                                                "private_ip": {
+                                                    "type": "string"
+                                                },
+                                                "public_dns": {
+                                                    "type": "string"
+                                                },
+                                                "start_timestamp": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "driver_node_type_id": {
+                                            "type": "string"
+                                        },
+                                        "enable_elastic_disk": {
+                                            "type": "boolean"
+                                        },
+                                        "enable_local_disk_encryption": {
+                                            "type": "boolean"
+                                        },
+                                        "executors": {
+                                            "items": {
+                                                "properties": {
+                                                    "host_private_ip": {
+                                                        "type": "string"
+                                                    },
+                                                    "instance_id": {
+                                                        "type": "string"
+                                                    },
+                                                    "node_id": {
+                                                        "type": "string"
+                                                    },
+                                                    "private_ip": {
+                                                        "type": "string"
+                                                    },
+                                                    "public_dns": {
+                                                        "type": "string"
+                                                    },
+                                                    "start_timestamp": {
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "public_dns",
+                                                    "node_id",
+                                                    "instance_id",
+                                                    "start_timestamp",
+                                                    "host_private_ip",
+                                                    "private_ip"
+                                                ],
+                                                "type": "object"
+                                            },
+                                            "type": "array"
+                                        },
+                                        "init_scripts_safe_mode": {
+                                            "type": "boolean"
+                                        },
+                                        "jdbc_port": {
+                                            "type": "integer"
+                                        },
+                                        "last_state_loss_time": {
+                                            "type": "integer"
+                                        },
+                                        "node_type_id": {
+                                            "type": "string"
+                                        },
+                                        "spark_conf": {
+                                            "properties": {
+                                                "spark.databricks.delta.preview.enabled": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "spark_context_id": {
+                                            "type": "integer"
+                                        },
+                                        "spark_env_vars": {
+                                            "properties": {
+                                                "PYSPARK_PYTHON": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "spark_version": {
+                                            "type": "string"
+                                        },
+                                        "start_time": {
+                                            "type": "integer"
+                                        },
+                                        "state": {
+                                            "type": "string"
+                                        },
+                                        "state_message": {
+                                            "type": "string"
+                                        },
+                                        "terminated_time": {
+                                            "type": "integer"
+                                        },
+                                        "termination_reason": {
+                                            "properties": {
+                                                "code": {
+                                                    "type": "string"
+                                                },
+                                                "parameters": {
+                                                    "properties": {
+                                                        "username": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "type": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "required": [
+                                        "cluster_id",
+                                        "spark_context_id",
+                                        "cluster_name",
+                                        "spark_version",
+                                        "spark_conf",
+                                        "node_type_id",
+                                        "driver_node_type_id",
+                                        "spark_env_vars",
+                                        "autotermination_minutes",
+                                        "enable_elastic_disk",
+                                        "cluster_source",
+                                        "enable_local_disk_encryption",
+                                        "azure_attributes",
+                                        "state",
+                                        "state_message",
+                                        "start_time",
+                                        "last_state_loss_time",
+                                        "autoscale",
+                                        "default_tags",
+                                        "creator_user_name",
+                                        "init_scripts_safe_mode"
+                                    ],
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "runAfter": {
+                    "List_Clusters": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson"
+            },
+            "Parse_Management_Endpoint_Token": {
+                "inputs": {
+                    "content": "@body('Get_Management_endpoint_token')",
+                    "schema": {
+                        "properties": {
+                            "access_token": {
+                                "type": "string"
+                            },
+                            "expires_in": {
+                                "type": "string"
+                            },
+                            "expires_on": {
+                                "type": "string"
+                            },
+                            "ext_expires_in": {
+                                "type": "string"
+                            },
+                            "not_before": {
+                                "type": "string"
+                            },
+                            "resource": {
+                                "type": "string"
+                            },
+                            "token_type": {
+                                "type": "string"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "runAfter": {
+                    "Get_Management_endpoint_token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson"
+            },
+            "Select": {
+                "inputs": {
+                    "from": "@body('Parse_Clusters')?['clusters']",
+                    "select": {
+                        "cluster_id": "@item()?['cluster_id']",
+                        "cluster_name": "@item()?['cluster_name']",
+                        "state": "@item()?['state']"
+                    }
+                },
+                "runAfter": {
+                    "Parse_Clusters": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Select"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {},
+        "triggers": {
+            "manual": {
+                "description": "{     \"databricksInstance\":\"first part in the url\",     \"tenantID\":\"azure ad id\",     \"client_id\":\"\",     \"client_secret\":\"\",     \"subscription\":\"sub id\",     \"resourceGroup\":\"\",     \"workspaceName\":\"\" }",
+                "inputs": {
+                    "schema": {
+                        "properties": {
+                            "client_id": {
+                                "type": "string"
+                            },
+                            "client_secret": {
+                                "type": "string"
+                            },
+                            "databricksInstance": {
+                                "type": "string"
+                            },
+                            "resourceGroup": {
+                                "type": "string"
+                            },
+                            "subscription": {
+                                "type": "string"
+                            },
+                            "tenantID": {
+                                "type": "string"
+                            },
+                            "workspaceName": {
+                                "type": "string"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "kind": "Http",
+                "type": "Request"
+            }
+        }
+    },
+    "parameters": {}
+}
